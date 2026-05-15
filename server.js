@@ -197,13 +197,11 @@ app.post('/api/login', (req, res) => {
     }
 });
 
-// Customer menu - only show available items
 app.get('/api/menu', (req, res) => {
     const availableItems = menuItems.filter(item => item.is_available === true);
     res.json(availableItems);
 });
 
-// Admin menu - show ALL items
 app.get('/api/admin/menu', verifyAdmin, (req, res) => {
     res.json(menuItems);
 });
@@ -307,11 +305,18 @@ app.delete('/api/cart/:cartId', verifyToken, (req, res) => {
 app.post('/api/orders', verifyToken, (req, res) => {
     const { payment_method, delivery_address } = req.body;
     
+    console.log('=== NEW ORDER REQUEST ===');
+    console.log('User ID:', req.userId);
+    console.log('Payment Method:', payment_method);
+    console.log('Delivery Address:', delivery_address);
+    
     if (!payment_method || !delivery_address) {
         return res.status(400).json({ error: 'Payment method and delivery address are required' });
     }
     
     let userCart = getUserCart(req.userId);
+    console.log('User Cart:', JSON.stringify(userCart, null, 2));
+    
     if (userCart.length === 0) {
         return res.status(400).json({ error: 'Cart is empty' });
     }
@@ -323,9 +328,6 @@ app.post('/api/orders', verifyToken, (req, res) => {
         const menuItem = menuItems.find(m => m.id === cartItem.menu_item_id);
         if (!menuItem) {
             return res.status(400).json({ error: `Menu item ${cartItem.menu_item_id} not found` });
-        }
-        if (!menuItem.is_available) {
-            return res.status(400).json({ error: `${menuItem.name} is no longer available` });
         }
         const itemTotal = menuItem.price * cartItem.quantity;
         totalAmount += itemTotal;
@@ -343,10 +345,15 @@ app.post('/api/orders', verifyToken, (req, res) => {
         items: orderItems.join(', ')
     };
     
+    console.log('New Order:', JSON.stringify(newOrder, null, 2));
+    
     orders.push(newOrder);
     carts[req.userId] = [];
     saveOrders();
     saveCarts();
+    
+    console.log('Total orders now:', orders.length);
+    console.log('========================');
     
     res.json({ success: true, message: 'Order placed successfully', orderId: newOrder.id });
 });
@@ -394,11 +401,6 @@ app.put('/api/admin/menu/:id', verifyAdmin, (req, res) => {
     const { name, description, price, category, image_asset, is_available } = req.body;
     const currentItem = menuItems[index];
     
-    console.log('=== UPDATE MENU ITEM ===');
-    console.log('Item ID:', id);
-    console.log('Current is_available:', currentItem.is_available);
-    console.log('Received is_available:', is_available);
-    
     const updatedItem = {
         ...currentItem,
         name: name !== undefined ? name.trim() : currentItem.name,
@@ -410,13 +412,8 @@ app.put('/api/admin/menu/:id', verifyAdmin, (req, res) => {
         updated_at: new Date().toISOString()
     };
     
-    console.log('Updated is_available:', updatedItem.is_available);
-    
     menuItems[index] = updatedItem;
     saveMenu();
-    
-    console.log('Menu saved. New value:', menuItems[index].is_available);
-    console.log('========================');
     
     res.json({ success: true, message: 'Item updated', item: updatedItem });
 });
@@ -534,10 +531,17 @@ app.delete('/api/admin/users/:id', verifyAdmin, (req, res) => {
 });
 
 app.get('/api/admin/orders', verifyAdmin, (req, res) => {
+    console.log('=== ADMIN ORDERS REQUEST ===');
+    console.log('Total orders in DB:', orders.length);
+    
     const ordersWithUser = orders.map(order => {
         const user = users.find(u => u.id === order.user_id);
         return { ...order, user_name: user?.full_name || 'Unknown' };
     });
+    
+    console.log('Returning orders:', ordersWithUser.length);
+    console.log('============================');
+    
     res.json(ordersWithUser);
 });
 
