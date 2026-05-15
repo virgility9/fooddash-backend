@@ -4,7 +4,6 @@ const fs = require('fs');
 const path = require('path');
 const app = express();
 
-// Enable CORS for web and mobile
 app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -21,12 +20,10 @@ const MENU_FILE = path.join(DATA_DIR, 'menu.json');
 const ORDERS_FILE = path.join(DATA_DIR, 'orders.json');
 const CARTS_FILE = path.join(DATA_DIR, 'carts.json');
 
-// Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-// Helper functions for data persistence
 function readJSON(filePath, defaultValue) {
     try {
         if (fs.existsSync(filePath)) {
@@ -50,13 +47,11 @@ function writeJSON(filePath, data) {
     }
 }
 
-// Initialize data files
 let users = readJSON(USERS_FILE, []);
 let menuItems = readJSON(MENU_FILE, []);
 let orders = readJSON(ORDERS_FILE, []);
 let carts = readJSON(CARTS_FILE, {});
 
-// Initialize with default data if empty
 if (users.length === 0) {
     users = [
         { id: 1, username: 'admin', email: 'admin@fooddash.com', password: 'admin123', full_name: 'Admin User', phone: '09123456789', address: 'Admin Office', role: 'admin', created_at: new Date().toISOString() },
@@ -90,13 +85,11 @@ if (Object.keys(carts).length === 0) {
     writeJSON(CARTS_FILE, carts);
 }
 
-// Save functions
 function saveUsers() { writeJSON(USERS_FILE, users); }
 function saveMenu() { writeJSON(MENU_FILE, menuItems); }
 function saveOrders() { writeJSON(ORDERS_FILE, orders); }
 function saveCarts() { writeJSON(CARTS_FILE, carts); }
 
-// Helper functions
 function getUserCart(userId) {
     if (!carts[userId]) carts[userId] = [];
     return carts[userId];
@@ -107,44 +100,6 @@ function getNextId(items) {
     return Math.max(...items.map(i => i.id)) + 1;
 }
 
-// Validation functions
-function validateMenuItem(data) {
-    const errors = [];
-    if (!data.name || data.name.trim().length < 2) {
-        errors.push('Name must be at least 2 characters');
-    }
-    if (!data.price || isNaN(parseFloat(data.price)) || parseFloat(data.price) <= 0) {
-        errors.push('Price must be a positive number');
-    }
-    if (data.category && data.category.length > 50) {
-        errors.push('Category must be less than 50 characters');
-    }
-    return errors;
-}
-
-function validateUser(data, isUpdate = false) {
-    const errors = [];
-    if (!isUpdate) {
-        if (!data.username || data.username.length < 3) {
-            errors.push('Username must be at least 3 characters');
-        }
-        if (!data.email || !data.email.includes('@')) {
-            errors.push('Valid email is required');
-        }
-        if (!data.password || data.password.length < 6) {
-            errors.push('Password must be at least 6 characters');
-        }
-    }
-    if (data.full_name && data.full_name.length < 2) {
-        errors.push('Full name must be at least 2 characters');
-    }
-    if (data.role && !['customer', 'admin'].includes(data.role)) {
-        errors.push('Role must be customer or admin');
-    }
-    return errors;
-}
-
-// ==================== MIDDLEWARE FUNCTIONS ====================
 const verifyToken = (req, res, next) => {
     const token = req.headers.authorization;
     if (!token) {
@@ -189,7 +144,6 @@ app.get('/api/test', (req, res) => {
 app.post('/api/register', (req, res) => {
     const { username, email, password, full_name, phone, address } = req.body;
     
-    // Validation
     if (!username || !email || !password || !full_name) {
         return res.status(400).json({ error: 'Username, email, password, and full name are required' });
     }
@@ -243,9 +197,15 @@ app.post('/api/login', (req, res) => {
     }
 });
 
+// Customer menu - only show available items
 app.get('/api/menu', (req, res) => {
     const availableItems = menuItems.filter(item => item.is_available === true);
     res.json(availableItems);
+});
+
+// Admin menu - show ALL items
+app.get('/api/admin/menu', verifyAdmin, (req, res) => {
+    res.json(menuItems);
 });
 
 // ==================== CART ROUTES ====================
@@ -303,7 +263,7 @@ app.put('/api/cart/:cartId', verifyToken, (req, res) => {
         return res.status(400).json({ error: 'Invalid cart ID' });
     }
     
-    if (!quantity || quantity < 0) {
+    if (quantity === undefined || quantity < 0) {
         return res.status(400).json({ error: 'Valid quantity is required' });
     }
     
@@ -397,16 +357,14 @@ app.get('/api/orders', verifyToken, (req, res) => {
 });
 
 // ==================== ADMIN ROUTES ====================
-app.get('/api/admin/menu', verifyAdmin, (req, res) => {
-    res.json(menuItems);
-});
-
 app.post('/api/admin/menu', verifyAdmin, (req, res) => {
     const { name, description, price, category, image_asset, is_available } = req.body;
     
-    const validationErrors = validateMenuItem({ name, price, category });
-    if (validationErrors.length > 0) {
-        return res.status(400).json({ error: validationErrors.join(', ') });
+    if (!name || name.trim().length < 2) {
+        return res.status(400).json({ error: 'Name must be at least 2 characters' });
+    }
+    if (!price || isNaN(parseFloat(price)) || parseFloat(price) <= 0) {
+        return res.status(400).json({ error: 'Price must be a positive number' });
     }
     
     const newItem = {
@@ -436,6 +394,11 @@ app.put('/api/admin/menu/:id', verifyAdmin, (req, res) => {
     const { name, description, price, category, image_asset, is_available } = req.body;
     const currentItem = menuItems[index];
     
+    console.log('=== UPDATE MENU ITEM ===');
+    console.log('Item ID:', id);
+    console.log('Current is_available:', currentItem.is_available);
+    console.log('Received is_available:', is_available);
+    
     const updatedItem = {
         ...currentItem,
         name: name !== undefined ? name.trim() : currentItem.name,
@@ -447,13 +410,14 @@ app.put('/api/admin/menu/:id', verifyAdmin, (req, res) => {
         updated_at: new Date().toISOString()
     };
     
-    const validationErrors = validateMenuItem(updatedItem);
-    if (validationErrors.length > 0) {
-        return res.status(400).json({ error: validationErrors.join(', ') });
-    }
+    console.log('Updated is_available:', updatedItem.is_available);
     
     menuItems[index] = updatedItem;
     saveMenu();
+    
+    console.log('Menu saved. New value:', menuItems[index].is_available);
+    console.log('========================');
+    
     res.json({ success: true, message: 'Item updated', item: updatedItem });
 });
 
@@ -478,9 +442,17 @@ app.get('/api/admin/users', verifyAdmin, (req, res) => {
 app.post('/api/admin/users', verifyAdmin, (req, res) => {
     const { username, email, password, full_name, phone, address, role } = req.body;
     
-    const validationErrors = validateUser({ username, email, password, full_name, role }, false);
-    if (validationErrors.length > 0) {
-        return res.status(400).json({ error: validationErrors.join(', ') });
+    if (!username || username.length < 3) {
+        return res.status(400).json({ error: 'Username must be at least 3 characters' });
+    }
+    if (!email || !email.includes('@')) {
+        return res.status(400).json({ error: 'Valid email is required' });
+    }
+    if (!password || password.length < 6) {
+        return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+    if (!full_name || full_name.length < 2) {
+        return res.status(400).json({ error: 'Full name must be at least 2 characters' });
     }
     
     const existingEmail = users.find(u => u.email === email.toLowerCase());
@@ -550,7 +522,6 @@ app.delete('/api/admin/users/:id', verifyAdmin, (req, res) => {
         return res.status(404).json({ error: 'User not found' });
     }
     
-    // Clean up user's cart and orders
     delete carts[id];
     orders = orders.filter(o => o.user_id !== id);
     
@@ -633,15 +604,13 @@ app.get('/api/admin/stats', verifyAdmin, (req, res) => {
     });
 });
 
-// ==================== SERVER START ====================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
     console.log('='.repeat(50));
-    console.log('FOOD ORDERING BACKEND (PERSISTENT DATA STORAGE)');
+    console.log('FOOD ORDERING BACKEND');
     console.log('='.repeat(50));
     console.log(`Server: http://localhost:${PORT}`);
     console.log(`Test: http://localhost:${PORT}/api/test`);
-    console.log(`Menu: http://localhost:${PORT}/api/menu`);
     console.log(`Data directory: ${DATA_DIR}`);
     console.log('\nAdmin: admin@fooddash.com / admin123');
     console.log('Customer: john@gmail.com / john123');
